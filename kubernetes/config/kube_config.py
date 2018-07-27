@@ -25,6 +25,8 @@ from kubernetes.client import ApiClient, ConfigurationObject, configuration
 
 from .config_exception import ConfigException
 
+from .exec_provider import ExecProvider
+
 KUBE_CONFIG_DEFAULT_LOCATION = '~/.kube/config'
 _temp_files = {}
 
@@ -138,13 +140,16 @@ class KubeConfigLoader(object):
             1. GCP auth-provider
             2. token_data
             3. token field (point to a token file)
-            4. username/password
+            4. exec provided plugin
+            5. username/password
         """
         if not self._user:
             return
         if self._load_gcp_token():
             return
         if self._load_user_token():
+            return
+        if self._load_from_exec_plugin():
             return
         self._load_user_pass_token()
 
@@ -160,6 +165,15 @@ class KubeConfigLoader(object):
         # TODO: support gcp command based token ("cmd-path" config).
         self.token = "Bearer %s" % self._get_google_credentials()
         return self.token
+
+    def _load_from_exec_plugin(self):
+        if 'exec' not in self._user:
+            return
+        status = ExecProvider(self._user['exec']).run()
+        if 'token' not in status:
+            return
+        self.token = "Bearer %s" % status['token']
+        return True
 
     def _load_user_token(self):
         token = FileOrData(
@@ -308,3 +322,4 @@ def new_client_from_config(config_file=None, context=None):
     load_kube_config(config_file=config_file, context=context,
                      client_configuration=client_config)
     return ApiClient(config=client_config)
+
